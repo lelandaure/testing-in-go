@@ -9,6 +9,10 @@ import (
 
 var port = ":8080"
 
+func Add(a, b int) int {
+	return a + b
+}
+
 func main() {
 	router := mux.NewRouter()
 
