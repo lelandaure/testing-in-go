@@ -11,24 +11,59 @@ import (
 func TestParsePokemonSuccess(t *testing.T) {
 	assert := require.New(t)
 
-	body, err := os.ReadFile("sample/pokeapi_response.json")
+	expected := apiResponse(assert)
+
+	pokeapiResponse := pokeApiResponse(assert)
+
+	actual, err := ParsePokemon(pokeapiResponse)
 	assert.NoError(err)
 
-	var response models.PokeApiPokemonResponse
+	assert.Equal(expected, actual, "This should be equal")
+}
 
-	err = json.Unmarshal(body, &response)
+func TestParsePokemonTypeNotFound(t *testing.T) {
+	assert := require.New(t)
+
+	response := pokeApiResponse(assert)
+
+	response.PokemonType = []models.PokemonType{}
+
+	_, err := ParsePokemon(response)
+	//assert.NotNil(err)
+	assert.EqualError(ErrNotFoundPokemonType, err.Error())
+}
+
+func TestParsePokemonTypeNotFoundName(t *testing.T) {
+	assert := require.New(t)
+
+	pokeapiResponse := pokeApiResponse(assert)
+	pokeapiResponse.PokemonType[0].RefType.Name = ""
+
+	_, err := ParsePokemon(pokeapiResponse)
+
+	assert.EqualError(ErrNotFoundPokemonTypeName, err.Error())
+}
+
+func apiResponse(assert *require.Assertions) models.Pokemon {
+	apiResponseJson, err := os.ReadFile("sample/api_response.json")
 	assert.NoError(err)
 
-	parsedPokemon, err := ParsePokemon(response)
+	var pokemon models.Pokemon
+
+	err = json.Unmarshal(apiResponseJson, &pokemon)
 	assert.NoError(err)
 
-	body, err = os.ReadFile("sample/api_response.json")
+	return pokemon
+}
+
+func pokeApiResponse(assert *require.Assertions) models.PokeApiPokemonResponse {
+	pokeApiResponseJson, err := os.ReadFile("sample/pokeapi_response.json")
 	assert.NoError(err)
 
-	var expectedPokemon models.Pokemon
+	var pokeApiPokemonResponse models.PokeApiPokemonResponse
 
-	err = json.Unmarshal(body, &expectedPokemon)
+	err = json.Unmarshal(pokeApiResponseJson, &pokeApiPokemonResponse)
 	assert.NoError(err)
 
-	assert.Equal(expectedPokemon, parsedPokemon, "This should be equal")
+	return pokeApiPokemonResponse
 }
