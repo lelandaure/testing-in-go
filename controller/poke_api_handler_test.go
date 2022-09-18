@@ -4,10 +4,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/gorilla/mux"
 	"github.com/jarcoal/httpmock"
 	"github.com/lelandaure/testing-in-go/models"
 	"github.com/stretchr/testify/require"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"testing"
 )
@@ -60,11 +62,28 @@ func TestGetPokemonFromPokeApiFirstWay(t *testing.T) {
 
 func TestGetPokemonFromPokeApiSecondWay(t *testing.T) {
 	assert := require.New(t)
+
+	httpmock.Activate()
+
 	for scenario, fn := range map[string]func(assert *require.Assertions){
-		"Success":      testSuccess,
-		"httpGetError": testHttpGetError,
-		//"StatusNotFound": testStatusNotFound,
-		//"InternalServcerError": testInternalServcerError,
+		"Success":             testSuccess,
+		"httpGetError":        testHttpGetError,
+		"StatusNotFound":      testStatusNotFound,
+		"InternalServerError": testInternalServerError,
+	} {
+		t.Run(scenario, func(t *testing.T) {
+			fn(assert)
+		})
+	}
+
+	httpmock.DeactivateAndReset()
+}
+
+func TestGetPokemon(t *testing.T) {
+	assert := require.New(t)
+
+	for scenario, fn := range map[string]func(assert *require.Assertions){
+		"Success": testGetPokemonSuccess,
 	} {
 		t.Run(scenario, func(t *testing.T) {
 			fn(assert)
@@ -72,9 +91,69 @@ func TestGetPokemonFromPokeApiSecondWay(t *testing.T) {
 	}
 }
 
+func testGetPokemonSuccess(assert *require.Assertions) {
+
+	r, err := http.NewRequest(http.MethodGet, "/pokemon/{id}", nil)
+	assert.NoError(err)
+
+	w := httptest.NewRecorder()
+
+	vars := map[string]string{
+		"id": "bulbasaur",
+	}
+	r = mux.SetURLVars(r, vars)
+
+	GetPokemon(w, r)
+	expectedBodyResponse := expectedBodyResponseBuilder(assert)
+
+	var expectedPokemon models.Pokemon
+	err = json.Unmarshal(expectedBodyResponse, &expectedPokemon)
+	assert.NoError(err)
+
+	var actualPokemon models.Pokemon
+
+	err = json.Unmarshal(w.Body.Bytes(), &actualPokemon)
+	assert.NoError(err)
+	assert.Equal(http.StatusOK, w.Code)
+	assert.Equal(expectedPokemon, actualPokemon)
+}
+
+func expectedBodyResponseBuilder(assert *require.Assertions) []byte {
+	expectedBodyResponse, err := os.ReadFile("sample/api_response.json")
+	assert.NoError(err)
+	return expectedBodyResponse
+}
+
+func testInternalServerError(assert *require.Assertions) {
+	defer httpmock.Reset()
+
+	httpmock.RegisterResponder(
+		http.MethodGet,
+		fmt.Sprintf("https://pokeapi.co/api/v2/pokemon/%s", "bulbasaur"),
+		httpmock.NewJsonResponderOrPanic(http.StatusInternalServerError, nil),
+	)
+
+	_, err := GetPokemonFromPokeApi("bulbasaur")
+	assert.Error(err)
+}
+
+func testStatusNotFound(assert *require.Assertions) {
+	defer httpmock.Reset()
+
+	httpmock.RegisterResponder(
+		http.MethodGet,
+		fmt.Sprintf("https://pokeapi.co/api/v2/pokemon/%s", "bulbasaur"),
+		httpmock.NewJsonResponderOrPanic(http.StatusNotFound, nil),
+	)
+
+	_, actualError := GetPokemonFromPokeApi("bulbasaur")
+
+	assert.EqualError(actualError, ErrPokemonNotFound.Error())
+
+}
+
 func testHttpGetError(assert *require.Assertions) {
-	httpmock.Activate()
-	defer httpmock.DeactivateAndReset()
+	defer httpmock.Reset()
 
 	httpmock.RegisterResponder(
 		http.MethodGet,
@@ -88,9 +167,7 @@ func testHttpGetError(assert *require.Assertions) {
 }
 
 func testSuccess(assert *require.Assertions) {
-	httpmock.Activate()
-	defer httpmock.DeactivateAndReset()
-
+	defer httpmock.Reset()
 	expectedResponse := expectedResponseOk(assert)
 	httpmock.RegisterResponder(
 		http.MethodGet,
